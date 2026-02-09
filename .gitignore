@@ -1,1 +1,4 @@
-/survey.csv
+survey.csv
+old_survey.csv
+survey_cleaned.csv
+__pycache__
