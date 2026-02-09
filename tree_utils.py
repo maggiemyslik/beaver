@@ -35,76 +35,88 @@ def nice_title_case(s):
     return ' '.join(w[:1].upper() + w[1:] if w else w for w in s.split())
 
 
+def _norm_token(s):
+    return str(s).strip().lower().replace('-', '_').replace(' ', '_')
+
+def _human_frequency(token):
+    """
+    Convert a one-hot suffix into a readable phrase.
+    Works for things like:
+      'once_or_twice_a_week' -> 'once or twice a week'
+      'less_than_once_a_month' -> 'less than once a month'
+      'i_dont' / 'dont' / 'never' -> 'not at all'
+    """
+    t = _norm_token(token)
+
+    t = t.replace('once_or_twice', 'once_or_twice')
+    t = t.replace('one_or_two', 'once_or_twice')
+    t = t.replace('less_than_once_a_month', 'less_than_once_a_month')
+    t = t.replace('less_than_once_month', 'less_than_once_a_month')
+    t = t.replace('less_than_once_per_month', 'less_than_once_a_month')
+
+    none_like = {'i_dont', 'dont', 'do_not', 'no', 'none', 'never', 'not_at_all'}
+    if t in none_like:
+        return 'not at all'
+
+    return t.replace('_', ' ')
+
+def make_exclude_list(exclude=None, default_exclude=None):
+    exclude = list(exclude or [])
+    default_exclude = list(default_exclude or [])
+    return list(dict.fromkeys(default_exclude + exclude))
+
 def pretty_question(feature_name):
     f = str(feature_name)
-    
-    if re.search(r'.+_.+', f) and '__' not in f:
-        parts = f.split('_')
-        if len(parts) >= 2:
-            left = parts[0]
-            right = '_'.join(parts[1:]).replace('_', ' ').strip()
-            
-            if left == 'gender':
-                if right.lower() in ['men', 'male']:
-                    return "Are you a man?"
-                if right.lower() in ['women', 'female']:
-                    return "Are you a woman?"
-                return f"Is your gender {right.lower()}?"
-            
-            if left == 'sexuality':
-                return f"Are you {right.lower()}?"
-            
-            if left == 'lse' and 'accommodation' in f:
-                return f"Do you live in {right}?"
-            
-            if left == 'department':
-                return f"Do you study {right}?"
-            
-            if 'sex' in left and 'frequency' in left:
-                return f"Do you have sex {right.lower()}?"
-            
-            if 'masturbation' in left and 'frequency' in left:
-                return f"Do you masturbate {right.lower()}?"
-            
-            if 'number' in left and 'partners' in left:
-                if right == '1':
-                    return "Do you have 1 regular sexual partner?"
-                return f"Do you have {right} regular sexual partners?"
-            
-            if left == 'body' and 'count' in f:
-                return f"Is your body count {right}?"
-            
-            if 'favourite' in left and 'position' in left:
-                return f"Is your favourite position {right.lower()}?"
-    
+    m = re.match(r'^(sex_frequency)_(.+)$', f)
+    if m:
+        phrase = _human_frequency(m.group(2))
+        if phrase == 'not at all':
+            return "Do you not have sex at all?"
+        return f"Do you have sex {phrase}?"
+
+    m = re.match(r'^(masturbation_frequency)_(.+)$', f)
+    if m:
+        phrase = _human_frequency(m.group(2))
+        if phrase == 'not at all':
+            return "Do you not masturbate at all?"
+        return f"Do you masturbate {phrase}?"
+
+    m = re.match(r'^(body_count)_(.+)$', f)
+    if m:
+        token = _norm_token(m.group(2))
+        zero_like = {'0', 'zero', 'none', 'no_one', 'noone'}
+        if token in zero_like:
+            return "Are you a virgin?"
+        return f"Is your body count {m.group(2)}?"
+
     if f.startswith('porn_genres_watched__'):
         item = nice_title_case(f.replace('porn_genres_watched__', '').replace('_', ' '))
         return f"Do you watch {item} porn?"
-    
+
     if f.startswith('dating_apps_used__'):
         item = nice_title_case(f.replace('dating_apps_used__', '').replace('_', ' '))
         return f"Do you use {item}?"
-    
+
     if f.startswith('kinks_participated__'):
         item = nice_title_case(f.replace('kinks_participated__', '').replace('_', ' '))
         return f"Are you into {item}?"
-    
+
     if f.startswith('soc__'):
         item = nice_title_case(f.replace('soc__', '').replace('_', ' '))
         return f"Are you in {item}?"
-    
+
     BOOL_QUESTIONS = {
         'watches_porn': "Do you watch porn?",
         'had_threesome': "Have you had a threesome?",
-        'had_same_gender_sex': "Have you had same-gender sex?",
+        'had_same_gender_sex': "Have you had gay sex?",
         'had_sex_on_campus': "Have you had sex on campus?",
         'has_cheated': "Have you cheated?",
-        'hooked_up_with_sway': "Have you hooked up at Sway?",
+        'hooked_up_with_sway': "Have you hooked up with someone at/from Sway?",
         'had_std': "Have you had an STD?"
     }
     if f in BOOL_QUESTIONS:
         return BOOL_QUESTIONS[f]
-    
+
     return nice_title_case(f).rstrip('?') + "?"
 
 
@@ -213,7 +225,7 @@ def display_nodes(tree, collapse_nodes):
     return keep, edges
 
 
-def build_tree_layout(keep_nodes, edges, tree, collapse_nodes):
+def build_tree_layout(keep_nodes, edges, tree, collapse_nodes, x_span=(0.03, 0.97), level_gap=1.25,leaf_gap=1.35):    
     depth = {0: 0}
     children = {}
     for src, dst, _ in edges:
@@ -238,7 +250,7 @@ def build_tree_layout(keep_nodes, edges, tree, collapse_nodes):
     x = {nid: 0.0 for nid in keep_nodes}
     leaves_sorted = sorted(display_leaves)
     for i, nid in enumerate(leaves_sorted):
-        x[nid] = float(i)
+        x[nid] = float(i) * float(leaf_gap)
     
     order = sorted(list(keep_nodes), key=lambda z: -depth.get(z, 0))
     for nid in order:
@@ -257,10 +269,13 @@ def build_tree_layout(keep_nodes, edges, tree, collapse_nodes):
         for nid in keep_nodes:
             x[nid] = 0.5
     
+    lo, hi = x_span
     for nid in keep_nodes:
-        x[nid] = 0.05 + 0.90 * x[nid]
+        x[nid] = float(lo) + (float(hi) - float(lo)) * x[nid]
     
-    y = {nid: 1.0 - (depth.get(nid, 0) / max(1.0, max_d + 0.5)) for nid in keep_nodes}
+    den = max(1.0, (max_d * float(level_gap)) + 0.5)
+    y = {nid: 1.0 - ((depth.get(nid, 0) * float(level_gap)) / den) for nid in keep_nodes}
+
     
     return x, y, display_leaves
 
@@ -269,7 +284,7 @@ def tree_to_figure_binary(clf, feature_names, title, leaf_style, theme_colors, t
     t = clf.tree_
     collapse_nodes = collapse_set_for_binary(t)
     keep_nodes, edges = display_nodes(t, collapse_nodes)
-    x, y, display_leaves = build_tree_layout(keep_nodes, edges, t, collapse_nodes)
+    x, y, display_leaves = build_tree_layout(keep_nodes, edges, t, collapse_nodes,x_span=(0.02, 0.98), level_gap=1.35,leaf_gap=1.55)
     
     edge_x, edge_y = [], []
     for src, dst, _ in edges:
@@ -333,7 +348,7 @@ def tree_to_figure_binary(clf, feature_names, title, leaf_style, theme_colors, t
             bgcolor=bg,
             bordercolor='rgba(43,45,66,0.16)',
             borderwidth=2,
-            borderpad=10,
+            borderpad=7,
             font=dict(size=13, family=typography['font_family'], color=theme_colors['neutral_dark'])
         )
     
@@ -354,6 +369,7 @@ def tree_to_figure_binary(clf, feature_names, title, leaf_style, theme_colors, t
     fig.update_layout(
         template='plotly_white',
         height=height,
+        width = 1200,
         margin=dict(l=30, r=30, t=75, b=20),
         title=dict(
             text=f"<b>{title}</b>",
